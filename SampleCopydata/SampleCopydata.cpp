@@ -10,6 +10,8 @@
 HINSTANCE hInst;                                // current instance
 WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
 WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
+HWND OtherhWnd;
+TCHAR *pSavedString;
 
 // Forward declarations of functions included in this code module:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -97,8 +99,10 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
    hInst = hInstance; // Store instance handle in our global variable
 
+   OtherhWnd = FindWindow(szWindowClass, NULL);
+
    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+      CW_USEDEFAULT, 0, 500, 250, nullptr, nullptr, hInstance, nullptr);
 
    if (!hWnd)
    {
@@ -125,16 +129,40 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
-    case WM_COMMAND:
+	case WM_COPYDATA:
+	{
+		COPYDATASTRUCT *pMessageCDS = (PCOPYDATASTRUCT)lParam;
+		// first save the string
+		pSavedString = (TCHAR*)malloc(pMessageCDS->cbData);
+		memcpy_s(pSavedString, pMessageCDS->cbData, pMessageCDS->lpData, pMessageCDS->cbData);
+		// now use it now and later
+		SetDlgItemTextW(hWnd, IDC_MESSAGE_EDIT, pSavedString);
+	}
+	break;
+	case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
             // Parse the menu selections:
             switch (wmId)
             {
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
+			case IDC_SEND_BUTTON:
+			{
+				TCHAR timeString[30];
+				time_t secs = time(0);
+				struct tm local;
+				localtime_s(&local, &secs);
+				swprintf(timeString, sizeof(timeString), L"%02d:%02d:%02d", local.tm_hour, local.tm_min, local.tm_sec);
+				COPYDATASTRUCT cds{};
+				cds.dwData = 1;
+				cds.cbData = (wcslen(timeString)+1)*sizeof(TCHAR);
+				cds.lpData = (PVOID)timeString;
+				SendMessage(OtherhWnd, WM_COPYDATA, NULL, (LPARAM)&cds);
+			}
+				break;
+			case IDM_ABOUT:
+				DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+				break;
+			case IDM_EXIT:
                 DestroyWindow(hWnd);
                 break;
             default:
@@ -153,7 +181,52 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY:
         PostQuitMessage(0);
         break;
-    default:
+	case WM_CREATE:
+		{
+		TCHAR DirectionReceive[] = L"I will receive";
+		TCHAR DirectionSend[] = L"I will send";
+		TCHAR *Direction;
+		if (OtherhWnd == NULL)
+			Direction = DirectionReceive;
+		else
+			Direction = DirectionSend;
+		CreateWindowExW(
+				0,
+				L"STATIC",
+				Direction,
+				WS_CHILD | WS_VISIBLE,
+				0, 0, 100, 16,
+				hWnd,
+				(HMENU)IDC_STATIC,
+				hInst,
+				NULL);
+			HWND hwndEdit = CreateWindowExW(
+				0,
+				L"EDIT",
+				L"Message!",
+				WS_CHILD | WS_VISIBLE | ES_LEFT,
+				10, 50, 100, 20,
+				hWnd,
+				(HMENU)IDC_MESSAGE_EDIT,
+				hInst,
+				NULL);
+			if (OtherhWnd == NULL)
+				return 0;
+			CreateWindow(
+				L"BUTTON",  // Predefined class; Unicode assumed 
+				L"Send",      // Button text 
+				WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+				10,         // x position 
+				100,         // y position 
+				100,        // Button width
+				20,        // Button height
+				hWnd,     // Parent window
+				(HMENU)IDC_SEND_BUTTON,
+				hInst,
+				NULL);      // Pointer not needed.
+		}
+		return 0;
+	default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
     return 0;
